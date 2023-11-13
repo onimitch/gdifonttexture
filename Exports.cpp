@@ -1,4 +1,5 @@
 #include "GdiFontManager.h"
+#include <string>
 
 int CALLBACK EnumFontFamExProc(const LOGFONT* lpelfe, const TEXTMETRIC* lpntme, DWORD FontType, LPARAM lParam)
 {
@@ -28,5 +29,21 @@ extern "C"
         LPARAM lParam = 0;
         ::EnumFontFamiliesEx(GetDC(nullptr), &lf, EnumFontFamExProc, (LPARAM)&lParam, 0);
         return lParam ? true : false;
+    }
+    extern __declspec(dllexport) const char* ShiftJIS_To_UTF8(const char* input)
+    {
+        WCHAR wideBuffer[4096];
+        ::MultiByteToWideChar(932, 0, input, -1, wideBuffer, 4096);
+        static char buffer[4096];
+        WideCharToMultiByte(CP_UTF8, 0, wideBuffer, -1, buffer, 4096, 0, 0);
+        return buffer;
+    }
+    extern __declspec(dllexport) const char* UTF8_To_ShiftJIS(const char* input)
+    {
+        WCHAR wideBuffer[4096];
+        ::MultiByteToWideChar(CP_UTF8, 0, input, -1, wideBuffer, 4096);
+        static char buffer[4096];
+        WideCharToMultiByte(932, 0, wideBuffer, -1, buffer, 4096, 0, 0);
+        return buffer;
     }
 }

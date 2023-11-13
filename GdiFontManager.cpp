@@ -1,5 +1,5 @@
 #include "GdiFontManager.h"
-#include <locale.h>
+#include <locale>
 
 GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     : m_Device(pDevice)
@@ -56,7 +56,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
 
     // Attempt to set up font family..
     wchar_t wBuffer[4096];
-    swprintf_s(wBuffer, 4096, L"%S", data.FontFamily);
+    ::MultiByteToWideChar(CP_UTF8, 0, data.FontFamily, -1, wBuffer, 4096);
     Gdiplus::FontFamily* pFontFamily = new Gdiplus::FontFamily(wBuffer);
     if (pFontFamily->GetLastStatus() != Gdiplus::Ok)
     {
@@ -65,7 +65,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
     }
 
     // Attempt to create graphics path..
-    swprintf_s(wBuffer, 4096, L"%S", data.FontText);
+    ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, wBuffer, 4096);
     auto length = wcslen(wBuffer);
     Gdiplus::Rect pathRect(0, 0, data.BoxWidth, data.BoxHeight);
     Gdiplus::StringFormat fontFormat;
