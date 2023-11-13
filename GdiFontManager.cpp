@@ -1,4 +1,5 @@
 #include "GdiFontManager.h"
+#include <locale.h>
 
 GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     : m_Device(pDevice)
@@ -35,6 +36,7 @@ GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     m_Graphics->SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     m_Graphics->SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     m_Graphics->SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+    setlocale(LC_ALL, "");
 }
 
 GdiFontManager::~GdiFontManager()
