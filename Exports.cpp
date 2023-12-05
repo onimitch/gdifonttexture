@@ -20,6 +20,10 @@ extern "C"
     {
         return pFontManager->CreateFontTexture(*data);
     }
+    extern __declspec(dllexport) GdiFontReturn_t CreateRectTexture(GdiFontManager* pFontManager, GdiRectData_t* data)
+    {
+        return pFontManager->CreateRectTexture(*data);
+    }
     extern __declspec(dllexport) bool GetFontAvailable(const char* font)
     {
         LOGFONT lf = {0};

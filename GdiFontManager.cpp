@@ -10,9 +10,9 @@ GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     Gdiplus::GdiplusStartup(&m_GDIToken, &gdiplusStartupInput, NULL);
 
     // Create bitmap in memory..
-    m_Size      = m_CanvasWidth * m_CanvasHeight * 4;
-    m_RawImage  = malloc(m_Size + 108);
-    m_Pixels    = (uint8_t*)m_RawImage + 108;
+    m_Size     = m_CanvasWidth * m_CanvasHeight * 4;
+    m_RawImage = malloc(m_Size + 108);
+    m_Pixels   = (uint8_t*)m_RawImage + 108;
     memset(m_RawImage, 0, m_Size + 108);
     auto p_Header              = (BITMAPV4HEADER*)m_RawImage;
     p_Header->bV4Size          = sizeof(BITMAPV4HEADER);
@@ -28,8 +28,8 @@ GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
 
     // Create gdiplus objects using bitmap in memory..
     this->m_CanvasStride = m_CanvasWidth * 4;
-    this->m_Bitmap   = new Gdiplus::Bitmap(m_CanvasWidth, m_CanvasHeight, m_CanvasStride, PixelFormat32bppARGB, (BYTE*)m_Pixels);
-    this->m_Graphics = new Gdiplus::Graphics(this->m_Bitmap);
+    this->m_Bitmap       = new Gdiplus::Bitmap(m_CanvasWidth, m_CanvasHeight, m_CanvasStride, PixelFormat32bppARGB, (BYTE*)m_Pixels);
+    this->m_Graphics     = new Gdiplus::Graphics(this->m_Bitmap);
     m_Graphics->SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
     m_Graphics->SetCompositingMode(Gdiplus::CompositingModeSourceOver);
     m_Graphics->SetCompositingQuality(Gdiplus::CompositingQualityHighQuality);
@@ -117,11 +117,10 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
     delete pPath;
     delete pFontFamily;
 
-
     // Examine raw pixels to get exact texture size(gdiplus does not calculate pixel perfect size)..
     int32_t firstPx = width - 1;
     int32_t lastPx  = 0;
-    uint32_t* px = (uint32_t*)this->m_Pixels;
+    uint32_t* px    = (uint32_t*)this->m_Pixels;
     for (auto y = 0; y < height; y++)
     {
         for (auto x = 0; x < firstPx; x++)
@@ -166,6 +165,94 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
         auto copyStride = width * 4;
         uint8_t* dest   = (uint8_t*)rect.pBits;
         uint8_t* src    = this->m_Pixels + (firstPx * 4);
+        for (int x = 0; x < height; x++)
+        {
+            memcpy(dest, src, copyStride);
+            dest += copyStride;
+            src += this->m_CanvasStride;
+        }
+    }
+    pTexture->UnlockRect(0);
+
+    // Create return object..
+    GdiFontReturn_t ret;
+    ret.Width   = width;
+    ret.Height  = height;
+    ret.Texture = pTexture;
+    return ret;
+}
+Gdiplus::GraphicsPath* CreateRoundedRectPath(Gdiplus::Rect rect, int radius)
+{
+    Gdiplus::GraphicsPath* pPath = new Gdiplus::GraphicsPath();
+    if (radius == 0)
+        pPath->AddRectangle(rect);
+    else
+    {
+        int diameter = radius * 2;
+        Gdiplus::Rect arc(rect.X, rect.Y, diameter, diameter);
+        pPath->AddArc(arc, 180, 90);
+        arc.X = (rect.X + rect.Width) - diameter;
+        pPath->AddArc(arc, 270, 90);
+        arc.Y = (rect.Y + rect.Height) - diameter;
+        pPath->AddArc(arc, 0, 90);
+        arc.X = rect.X;
+        pPath->AddArc(arc, 90, 90);
+        pPath->CloseFigure();
+    }
+    return pPath;
+}
+
+GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
+{
+    int width  = data.Width;
+    int height = data.Height;
+    auto outlineIndent = data.OutlineWidth;
+    Gdiplus::Rect drawRect(outlineIndent, outlineIndent, data.Width - (outlineIndent * 2), data.Height - (outlineIndent * 2));
+    Gdiplus::GraphicsPath* pPath = CreateRoundedRectPath(drawRect, data.EdgeRounding);
+
+    // Clear necessary space
+    this->ClearCanvas(width, height);
+
+    // Draw outline if applicable..
+    if ((data.OutlineWidth > 0) && ((data.OutlineColor & 0xFF000000) != 0))
+    {
+        Gdiplus::Pen pen(UINT32_TO_COLOR(data.OutlineColor), data.OutlineWidth * 2);
+        m_Graphics->DrawPath(&pen, pPath);
+    }
+
+    // Fill text if font color isn't fully transparent..
+    if (((data.FillColor & 0xFF000000) != 0) || ((data.GradientStyle != 0) && ((data.GradientColor & 0xFF000000) != 0)))
+    {
+        auto pBrush = GetBrush(data, data.Width, data.Height);
+        m_Graphics->FillPath(pBrush, pPath);
+        delete pBrush;
+    }
+
+    // Clean up remaining gdiplus objects..
+    delete pPath;
+
+    // Attempt to create texture..
+    IDirect3DTexture8* pTexture;
+    if (FAILED(::D3DXCreateTexture(this->m_Device, width, height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &pTexture)))
+    {
+        return GdiFontReturn_t();
+    }
+    D3DSURFACE_DESC surfaceDesc;
+    if (FAILED(pTexture->GetLevelDesc(0, &surfaceDesc)))
+    {
+        if (pTexture != nullptr)
+            pTexture->Release();
+
+        return GdiFontReturn_t();
+    }
+
+    // Copy rendered font from bitmap to texture..
+    D3DLOCKED_RECT rect{};
+    pTexture->LockRect(0, &rect, 0, 0);
+    {
+        auto copyStride = width * 4;
+        uint8_t* dest   = (uint8_t*)rect.pBits;
+        uint8_t* src    = this->m_Pixels;
         for (int x = 0; x < height; x++)
         {
             memcpy(dest, src, copyStride);
@@ -261,8 +348,72 @@ Gdiplus::Brush* GdiFontManager::GetBrush(GdiFontData_t data, int width, int heig
 
         default:
             end.X = width;
-            break;       
+            break;
     }
 
     return new Gdiplus::LinearGradientBrush(start, end, UINT32_TO_COLOR(data.FontColor), UINT32_TO_COLOR(data.GradientColor));
+}
+
+Gdiplus::Brush* GdiFontManager::GetBrush(GdiRectData_t data, int width, int height)
+{
+    if (data.GradientStyle == 0)
+    {
+        auto color = UINT32_TO_COLOR(data.FillColor);
+        return new Gdiplus::SolidBrush(color);
+    }
+
+    Gdiplus::Point start(0, 0);
+    Gdiplus::Point end(0, 0);
+    switch (data.GradientStyle)
+    {
+        //Left to right
+        case 1:
+            end.X = width;
+            break;
+
+        //Top-Left to Bottom Right
+        case 2:
+            end.X = width;
+            end.Y = height;
+            break;
+
+        //Top to bottom
+        case 3:
+            end.Y = height;
+            break;
+
+        //Top-Right to Bottom Left
+        case 4:
+            start.X = width;
+            end.Y   = height;
+            break;
+
+        //Right to Left
+        case 5:
+            start.X = width;
+            break;
+
+        //Bottom-Right to Top Left
+        case 6:
+            start.X = width;
+            start.Y = height;
+            break;
+
+        //Bottom to Top
+        case 7:
+            start.Y = height;
+            break;
+
+        //Bottom-Left to Top Right
+        case 8:
+            start.Y = height;
+            end.X   = width;
+            break;
+
+        default:
+            end.X = width;
+            break;
+    }
+
+    return new Gdiplus::LinearGradientBrush(start, end, UINT32_TO_COLOR(data.FillColor), UINT32_TO_COLOR(data.GradientColor));
 }

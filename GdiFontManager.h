@@ -28,10 +28,12 @@ public:
     GdiFontManager(IDirect3DDevice8* pDevice);
     ~GdiFontManager();
     GdiFontReturn_t CreateFontTexture(GdiFontData_t data);
+    GdiFontReturn_t CreateRectTexture(GdiRectData_t data);
     
 private:
     Gdiplus::Color UINT32_TO_COLOR(uint32_t color);
     void ClearCanvas(int width, int height);
     Gdiplus::Brush* GetBrush(GdiFontData_t data, int width, int height);
+    Gdiplus::Brush* GetBrush(GdiRectData_t data, int width, int height);
 };
 #endif

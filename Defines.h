@@ -24,6 +24,18 @@ struct GdiFontData_t
     char FontText[4096];
 };
 
+struct GdiRectData_t
+{
+    int32_t Width;
+    int32_t Height;
+    int32_t EdgeRounding;
+    uint32_t OutlineColor;
+    uint32_t OutlineWidth;
+    uint32_t FillColor;
+    uint32_t GradientStyle;
+    uint32_t GradientColor;
+};
+
 struct GdiFontReturn_t
 {
     int32_t Width;
