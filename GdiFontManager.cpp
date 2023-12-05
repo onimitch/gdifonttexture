@@ -118,26 +118,37 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
     delete pFontFamily;
 
     // Examine raw pixels to get exact texture size(gdiplus does not calculate pixel perfect size)..
-    int32_t firstPx = width - 1;
-    int32_t lastPx  = 0;
-    uint32_t* px    = (uint32_t*)this->m_Pixels;
-    for (auto y = 0; y < height; y++)
+    int32_t firstPx   = width - 1;
+    int32_t lastPx    = 0;
+    uint32_t* px      = (uint32_t*)this->m_Pixels;
+    int maxHeight     = height;
+    for (auto y = 0; y < maxHeight; y++)
     {
-        for (auto x = 0; x < firstPx; x++)
+        for (auto x = (width - 1); x >= lastPx; x--)
         {
             if (px[x])
-                firstPx = x;
+            {
+                height = y + 1;
+                lastPx    = x;
+            }
         }
 
-        for (auto x = (width - 1); x > lastPx; x--)
+        for (auto x = 0; x < width; x++)
         {
             if (px[x])
-                lastPx = x;
+            {
+                height = y + 1;
+                if (x < firstPx)
+                {
+                    firstPx = x;
+                }
+                break;
+            }
         }
 
-        px += this->m_CanvasStride;
+        px += this->m_CanvasWidth;
     }
-    width = (lastPx - firstPx) + 1;
+    width  = (lastPx - firstPx) + 1;
 
     // End early if width or height are 0..
     if ((width == 0) || (height == 0))
@@ -204,14 +215,14 @@ Gdiplus::GraphicsPath* CreateRoundedRectPath(Gdiplus::Rect rect, int radius)
 
 GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
 {
-    int width          = data.Width;
-    int height         = data.Height;
+    int width  = data.Width;
+    int height = data.Height;
 
     Gdiplus::Rect drawRect(0, 0, width, height);
     if (data.OutlineWidth != 0)
     {
         auto inset  = data.OutlineWidth / 2;
-        auto shrink  = data.OutlineWidth;
+        auto shrink = data.OutlineWidth;
         if (data.OutlineWidth % 2)
         {
             inset += 1;
