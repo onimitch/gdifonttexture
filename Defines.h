@@ -28,7 +28,7 @@ struct GdiRectData_t
 {
     int32_t Width;
     int32_t Height;
-    int32_t EdgeRounding;
+    int32_t Diameter;
     uint32_t OutlineColor;
     uint32_t OutlineWidth;
     uint32_t FillColor;

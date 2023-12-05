@@ -204,28 +204,41 @@ Gdiplus::GraphicsPath* CreateRoundedRectPath(Gdiplus::Rect rect, int radius)
 
 GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
 {
-    int width  = data.Width;
-    int height = data.Height;
-    auto outlineIndent = data.OutlineWidth;
-    Gdiplus::Rect drawRect(outlineIndent, outlineIndent, data.Width - (outlineIndent * 2), data.Height - (outlineIndent * 2));
-    Gdiplus::GraphicsPath* pPath = CreateRoundedRectPath(drawRect, data.EdgeRounding);
+    int width          = data.Width;
+    int height         = data.Height;
+
+    Gdiplus::Rect drawRect(0, 0, width, height);
+    if (data.OutlineWidth != 0)
+    {
+        auto inset  = data.OutlineWidth / 2;
+        auto shrink  = data.OutlineWidth;
+        if (data.OutlineWidth % 2)
+        {
+            inset += 1;
+            shrink++;
+        }
+        drawRect = Gdiplus::Rect(inset, inset, width - shrink, height - shrink);
+    }
+    Gdiplus::GraphicsPath* pPath = CreateRoundedRectPath(drawRect, data.Diameter);
 
     // Clear necessary space
     this->ClearCanvas(width, height);
 
-    // Draw outline if applicable..
-    if ((data.OutlineWidth > 0) && ((data.OutlineColor & 0xFF000000) != 0))
-    {
-        Gdiplus::Pen pen(UINT32_TO_COLOR(data.OutlineColor), data.OutlineWidth * 2);
-        m_Graphics->DrawPath(&pen, pPath);
-    }
-
     // Fill text if font color isn't fully transparent..
     if (((data.FillColor & 0xFF000000) != 0) || ((data.GradientStyle != 0) && ((data.GradientColor & 0xFF000000) != 0)))
     {
-        auto pBrush = GetBrush(data, data.Width, data.Height);
+        auto pBrush = GetBrush(data, width, height);
         m_Graphics->FillPath(pBrush, pPath);
         delete pBrush;
+    }
+
+    // Draw outline if applicable..
+    if ((data.OutlineWidth > 0) && ((data.OutlineColor & 0xFF000000) != 0))
+    {
+        Gdiplus::GraphicsPath* pOutline = CreateRoundedRectPath(drawRect, data.Diameter);
+        Gdiplus::Pen pen(UINT32_TO_COLOR(data.OutlineColor), data.OutlineWidth);
+        m_Graphics->DrawPath(&pen, pOutline);
+        delete pOutline;
     }
 
     // Clean up remaining gdiplus objects..
@@ -364,6 +377,7 @@ Gdiplus::Brush* GdiFontManager::GetBrush(GdiRectData_t data, int width, int heig
 
     Gdiplus::Point start(0, 0);
     Gdiplus::Point end(0, 0);
+
     switch (data.GradientStyle)
     {
         //Left to right
