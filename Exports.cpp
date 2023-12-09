@@ -33,4 +33,12 @@ extern "C"
         ::EnumFontFamiliesEx(GetDC(nullptr), &lf, EnumFontFamExProc, (LPARAM)&lParam, 0);
         return lParam ? true : false;
     }
+    extern __declspec(dllexport) void EnableTextureDump(GdiFontManager* pFontManager, const char* folder)
+    {
+        pFontManager->EnableTextureDump(folder);
+    }
+    extern __declspec(dllexport) void DisableTextureDump(GdiFontManager* pFontManager)
+    {
+        pFontManager->DisableTextureDump();
+    }
 }

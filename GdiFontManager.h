@@ -22,6 +22,8 @@ private:
     int m_Size;
     void* m_RawImage;
     uint8_t* m_Pixels;
+    bool m_SaveToHardDrive;
+    char m_SavePath[1024];
 
 
 public:
@@ -29,6 +31,8 @@ public:
     ~GdiFontManager();
     GdiFontReturn_t CreateFontTexture(GdiFontData_t data);
     GdiFontReturn_t CreateRectTexture(GdiRectData_t data);
+    void EnableTextureDump(const char* Folder);
+    void DisableTextureDump();
     
 private:
     Gdiplus::Color UINT32_TO_COLOR(uint32_t color);

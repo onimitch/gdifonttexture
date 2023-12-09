@@ -1,10 +1,43 @@
 #include "GdiFontManager.h"
+#include <filesystem>
 #include <locale>
+
+int GetEncoderClsid(const WCHAR* format, CLSID* pClsid)
+{
+    UINT num  = 0; // number of image encoders
+    UINT size = 0; // size of the image encoder array in bytes
+
+    Gdiplus::ImageCodecInfo* pImageCodecInfo = NULL;
+
+    Gdiplus::GetImageEncodersSize(&num, &size);
+    if (size == 0)
+        return -1; // Failure
+
+    pImageCodecInfo = (Gdiplus::ImageCodecInfo*)(malloc(size));
+    if (pImageCodecInfo == NULL)
+        return -1; // Failure
+
+    Gdiplus::GetImageEncoders(num, size, pImageCodecInfo);
+
+    for (UINT j = 0; j < num; ++j)
+    {
+        if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0)
+        {
+            *pClsid = pImageCodecInfo[j].Clsid;
+            free(pImageCodecInfo);
+            return j; // Success
+        }
+    }
+
+    free(pImageCodecInfo);
+    return -1; // Failure
+}
 
 GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     : m_Device(pDevice)
     , m_CanvasWidth(2048)
     , m_CanvasHeight(2048)
+    , m_SaveToHardDrive(false)
 {
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&m_GDIToken, &gdiplusStartupInput, NULL);
@@ -118,10 +151,10 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
     delete pFontFamily;
 
     // Examine raw pixels to get exact texture size(gdiplus does not calculate pixel perfect size)..
-    int32_t firstPx   = width - 1;
-    int32_t lastPx    = 0;
-    uint32_t* px      = (uint32_t*)this->m_Pixels;
-    int maxHeight     = height;
+    int32_t firstPx = width - 1;
+    int32_t lastPx  = 0;
+    uint32_t* px    = (uint32_t*)this->m_Pixels;
+    int maxHeight   = height;
     for (auto y = 0; y < maxHeight; y++)
     {
         for (auto x = (width - 1); x >= lastPx; x--)
@@ -129,7 +162,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
             if (px[x])
             {
                 height = y + 1;
-                lastPx    = x;
+                lastPx = x;
             }
         }
 
@@ -148,7 +181,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
 
         px += this->m_CanvasWidth;
     }
-    width  = (lastPx - firstPx) + 1;
+    width = (lastPx - firstPx) + 1;
 
     // End early if width or height are 0..
     if ((width == 0) || (height == 0))
@@ -171,11 +204,11 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
 
     // Copy rendered font from bitmap to texture..
     D3DLOCKED_RECT rect{};
+    auto copyStride = width * 4;
     pTexture->LockRect(0, &rect, 0, 0);
     {
-        auto copyStride = width * 4;
-        uint8_t* dest   = (uint8_t*)rect.pBits;
-        uint8_t* src    = this->m_Pixels + (firstPx * 4);
+        uint8_t* dest = (uint8_t*)rect.pBits;
+        uint8_t* src  = this->m_Pixels + (firstPx * 4);
         for (int x = 0; x < height; x++)
         {
             memcpy(dest, src, copyStride);
@@ -184,6 +217,47 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
         }
     }
     pTexture->UnlockRect(0);
+
+    // Save physical file if requested
+    if (m_SaveToHardDrive)
+    {
+        BITMAPV4HEADER bmp   = {sizeof(BITMAPV4HEADER)};
+        bmp.bV4Width         = width;
+        bmp.bV4Height        = height;
+        bmp.bV4Planes        = 1;
+        bmp.bV4BitCount      = 32;
+        bmp.bV4V4Compression = BI_BITFIELDS;
+        bmp.bV4RedMask       = 0x00FF0000;
+        bmp.bV4GreenMask     = 0x0000FF00;
+        bmp.bV4BlueMask      = 0x000000FF;
+        bmp.bV4AlphaMask     = 0xFF000000;
+
+        uint8_t* pPixels      = nullptr;
+        HBITMAP pBmp          = ::CreateDIBSection(nullptr, (BITMAPINFO*)&bmp, DIB_RGB_COLORS, (void**)&pPixels, nullptr, 0);
+        Gdiplus::Bitmap* pRaw = new Gdiplus::Bitmap(width, height, width * 4, PixelFormat32bppARGB, (BYTE*)pPixels);
+
+        uint8_t* src = this->m_Pixels + (firstPx * 4);
+        for (int x = 0; x < height; x++)
+        {
+            memcpy(pPixels, src, copyStride);
+            pPixels += copyStride;
+            src += this->m_CanvasStride;
+        }
+
+        CLSID pngClsid;
+        GetEncoderClsid(L"image/png", &pngClsid);
+        auto index = 0;
+        wchar_t nameBuffer[256];
+        swprintf_s(nameBuffer, L"%S\\font_%u.png", m_SavePath, index);
+        while (std::filesystem::exists(nameBuffer))
+        {
+            index++;
+            swprintf_s(nameBuffer, L"%S\\font_%u.png", m_SavePath, index);
+        }
+        pRaw->Save(nameBuffer, &pngClsid, NULL);
+        delete pRaw;
+        DeleteObject(pBmp);
+    }
 
     // Create return object..
     GdiFontReturn_t ret;
@@ -272,11 +346,11 @@ GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
 
     // Copy rendered font from bitmap to texture..
     D3DLOCKED_RECT rect{};
+    auto copyStride = width * 4;
     pTexture->LockRect(0, &rect, 0, 0);
     {
-        auto copyStride = width * 4;
-        uint8_t* dest   = (uint8_t*)rect.pBits;
-        uint8_t* src    = this->m_Pixels;
+        uint8_t* dest = (uint8_t*)rect.pBits;
+        uint8_t* src  = this->m_Pixels;
         for (int x = 0; x < height; x++)
         {
             memcpy(dest, src, copyStride);
@@ -285,6 +359,47 @@ GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
         }
     }
     pTexture->UnlockRect(0);
+
+    // Save physical file if requested
+    if (m_SaveToHardDrive)
+    {
+        BITMAPV4HEADER bmp   = {sizeof(BITMAPV4HEADER)};
+        bmp.bV4Width         = width;
+        bmp.bV4Height        = height;
+        bmp.bV4Planes        = 1;
+        bmp.bV4BitCount      = 32;
+        bmp.bV4V4Compression = BI_BITFIELDS;
+        bmp.bV4RedMask       = 0x00FF0000;
+        bmp.bV4GreenMask     = 0x0000FF00;
+        bmp.bV4BlueMask      = 0x000000FF;
+        bmp.bV4AlphaMask     = 0xFF000000;
+
+        uint8_t* pPixels      = nullptr;
+        HBITMAP pBmp          = ::CreateDIBSection(nullptr, (BITMAPINFO*)&bmp, DIB_RGB_COLORS, (void**)&pPixels, nullptr, 0);
+        Gdiplus::Bitmap* pRaw = new Gdiplus::Bitmap(width, height, width * 4, PixelFormat32bppARGB, (BYTE*)pPixels);
+
+        uint8_t* src = this->m_Pixels;
+        for (int x = 0; x < height; x++)
+        {
+            memcpy(pPixels, src, copyStride);
+            pPixels += copyStride;
+            src += this->m_CanvasStride;
+        }
+
+        CLSID pngClsid;
+        GetEncoderClsid(L"image/png", &pngClsid);
+        auto index = 0;
+        wchar_t nameBuffer[256];
+        swprintf_s(nameBuffer, L"%S\\rect_%u.png", m_SavePath, index);
+        while (std::filesystem::exists(nameBuffer))
+        {
+            index++;
+            swprintf_s(nameBuffer, L"%S\\rect_%u.png", m_SavePath, index);
+        }
+        pRaw->Save(nameBuffer, &pngClsid, NULL);
+        delete pRaw;
+        DeleteObject(pBmp);
+    }
 
     // Create return object..
     GdiFontReturn_t ret;
@@ -441,4 +556,14 @@ Gdiplus::Brush* GdiFontManager::GetBrush(GdiRectData_t data, int width, int heig
     }
 
     return new Gdiplus::LinearGradientBrush(start, end, UINT32_TO_COLOR(data.FillColor), UINT32_TO_COLOR(data.GradientColor));
+}
+
+void GdiFontManager::EnableTextureDump(const char* folder)
+{
+    strcpy_s(m_SavePath, 1024, folder);
+    m_SaveToHardDrive = true;
+}
+void GdiFontManager::DisableTextureDump()
+{
+    m_SaveToHardDrive = false;
 }
