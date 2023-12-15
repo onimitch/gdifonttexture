@@ -9,6 +9,20 @@
 #pragma comment(lib, "Gdiplus.lib")
 #include <stdint.h>
 
+struct GdiCharRange_t
+{
+    INT First;
+    INT Length;
+};
+
+struct GdiRegion_t
+{
+    uint32_t FontColor;
+    uint32_t OutlineColor;
+    GdiCharRange_t* Ranges = nullptr;
+    int32_t RangesLength;
+};
+
 struct GdiFontData_t
 {
     int32_t BoxHeight;
@@ -20,8 +34,10 @@ struct GdiFontData_t
     uint32_t OutlineColor;
     uint32_t GradientStyle;
     uint32_t GradientColor;
-    char FontFamily[256];
-    char FontText[4096];
+    const char* FontFamily = nullptr;
+    const char* FontText = nullptr;
+    GdiRegion_t* Regions = nullptr;
+    int32_t RegionsLength;
 };
 
 struct GdiRectData_t

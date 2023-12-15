@@ -80,29 +80,39 @@ GdiFontManager::~GdiFontManager()
     Gdiplus::GdiplusShutdown(m_GDIToken);
 }
 
-GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
+GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 {
-    if (data.BoxHeight == 0)
-        data.BoxHeight = m_CanvasHeight;
-    if (data.BoxWidth == 0)
-        data.BoxWidth = m_CanvasWidth;
+    int32_t boxHeight = data.BoxHeight > 0 ? data.BoxHeight : m_CanvasHeight;
+    int32_t boxWidth = data.BoxWidth > 0 ? data.BoxWidth : m_CanvasWidth;
+
+    // Get FontFamily as wchar
+    int wchar_buffer_size = ::MultiByteToWideChar(CP_UTF8, 0, data.FontFamily, -1, nullptr, 0);
+    wchar_t* wBuffer = new wchar_t[wchar_buffer_size];
+    ::MultiByteToWideChar(CP_UTF8, 0, data.FontFamily, -1, wBuffer, wchar_buffer_size);
 
     // Attempt to set up font family..
-    wchar_t wBuffer[4096];
-    ::MultiByteToWideChar(CP_UTF8, 0, data.FontFamily, -1, wBuffer, 4096);
     Gdiplus::FontFamily* pFontFamily = new Gdiplus::FontFamily(wBuffer);
     if (pFontFamily->GetLastStatus() != Gdiplus::Ok)
     {
         delete pFontFamily;
+        delete[] wBuffer;
         return GdiFontReturn_t();
     }
 
-    // Attempt to create graphics path..
-    ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, wBuffer, 4096);
+    delete[] wBuffer;
+
+    // Get FontText as wchar
+    wchar_buffer_size = ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, nullptr, 0);
+    wBuffer = new wchar_t[wchar_buffer_size];
+    ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, wBuffer, wchar_buffer_size);
+    // TODO: Is this redundant now we have wchar_buffer_size?
     auto length = wcslen(wBuffer);
-    Gdiplus::Rect pathRect(0, 0, data.BoxWidth, data.BoxHeight);
+
+    // Attempt to create graphics path..
+    Gdiplus::Rect pathRect(0, 0, boxWidth, boxHeight);
     Gdiplus::StringFormat fontFormat;
     fontFormat.SetAlignment(Gdiplus::StringAlignment::StringAlignmentNear);
+
     Gdiplus::GraphicsPath* pPath = new Gdiplus::GraphicsPath();
     pPath->AddString(wBuffer, length, pFontFamily, data.FontFlags, data.FontHeight, pathRect, &fontFormat);
     if (pPath->GetLastStatus() != Gdiplus::Ok)
@@ -131,11 +141,73 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(GdiFontData_t data)
     int32_t height = (int32_t)ceil(box.Height);
     this->ClearCanvas(width, height);
 
+    m_Graphics->ResetClip();
+    Gdiplus::Region clipRegion(box);
+    
+    Gdiplus::Font myFont(pFontFamily, data.FontHeight, data.FontFlags, Gdiplus::UnitPixel);
+
+    // Get text bounds since the height is more accurate than the path GetBounds above
+    //Gdiplus::CharacterRange charRangesAll[1] = { Gdiplus::CharacterRange(0, length) };
+    //fontFormat.SetMeasurableCharacterRanges(1, (const Gdiplus::CharacterRange*)charRangesAll);
+    //Gdiplus::Region charRangeRegionsAll[1] = {};
+    //m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, box, &fontFormat, 1, charRangeRegionsAll);
+    //Gdiplus::Rect textBounds;
+    //charRangeRegionsAll->GetBounds(&textBounds, m_Graphics);
+
+    // Draw regions first
+    for(int regionIndex = 0; regionIndex < data.RegionsLength; ++regionIndex)
+    { 
+        //Gdiplus::CharacterRange charRanges[1] = { Gdiplus::CharacterRange(1, 10) };
+        const auto& regionInfo = data.Regions[regionIndex];
+        int rangeCount = regionInfo.RangesLength;
+
+        // Set ranges of character positions.
+        fontFormat.SetMeasurableCharacterRanges(rangeCount, (const Gdiplus::CharacterRange*)regionInfo.Ranges);
+
+        // Get the number of ranges that have been set, and allocate memory to 
+        // store the regions that correspond to the ranges.
+        rangeCount = fontFormat.GetMeasurableCharacterRangeCount();
+        Gdiplus::Region* pCharRangeRegions = new Gdiplus::Region[rangeCount];
+
+        // Get the regions that correspond to the ranges within the string when
+        // layout rectangle A is used. Then draw the string, and show the regions.
+        m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, box, &fontFormat, rangeCount, pCharRangeRegions);
+
+        for (int i = 0; i < rangeCount; i++)
+        {
+            // Draw this character range region in the defined color
+            
+            //Gdiplus::SolidBrush redBrush(regionInfo.FontColor);
+            //m_Graphics->FillRegion(&redBrush, pCharRangeRegions + i);
+
+            m_Graphics->SetClip(pCharRangeRegions + i, Gdiplus::CombineModeReplace);
+
+            auto pBrush = new Gdiplus::SolidBrush(UINT32_TO_COLOR(regionInfo.FontColor));
+            m_Graphics->FillPath(pBrush, pPath);
+            delete pBrush;
+
+            // Exclude this area from the standard render
+            clipRegion.Exclude(pCharRangeRegions + i);
+        }
+
+        delete[] pCharRangeRegions;
+    }
+
+    delete[] wBuffer;
+
+    m_Graphics->ResetClip();
+
     // Draw outline if applicable..
     if (pen)
     {
         m_Graphics->DrawPath(pen, pPath);
         delete pen;
+    }
+
+    // Set clip so we don't render on top of excluded regions
+    if (data.RegionsLength > 0)
+    {
+        m_Graphics->SetClip(&clipRegion, Gdiplus::CombineModeReplace);
     }
 
     // Fill text if font color isn't fully transparent..
@@ -287,7 +359,7 @@ Gdiplus::GraphicsPath* CreateRoundedRectPath(Gdiplus::Rect rect, int radius)
     return pPath;
 }
 
-GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
+GdiFontReturn_t GdiFontManager::CreateRectTexture(const GdiRectData_t& data)
 {
     int width  = data.Width;
     int height = data.Height;
@@ -401,6 +473,10 @@ GdiFontReturn_t GdiFontManager::CreateRectTexture(GdiRectData_t data)
         DeleteObject(pBmp);
     }
 
+    // Use the calculated text bounds for the height
+    //width = textBounds.Width;
+    //height = textBounds.Height;
+
     // Create return object..
     GdiFontReturn_t ret;
     ret.Width   = width;
@@ -429,7 +505,7 @@ void GdiFontManager::ClearCanvas(int width, int height)
     }
 }
 
-Gdiplus::Brush* GdiFontManager::GetBrush(GdiFontData_t data, int width, int height)
+Gdiplus::Brush* GdiFontManager::GetBrush(const GdiFontData_t& data, int width, int height)
 {
     if (data.GradientStyle == 0)
     {
@@ -493,7 +569,7 @@ Gdiplus::Brush* GdiFontManager::GetBrush(GdiFontData_t data, int width, int heig
     return new Gdiplus::LinearGradientBrush(start, end, UINT32_TO_COLOR(data.FontColor), UINT32_TO_COLOR(data.GradientColor));
 }
 
-Gdiplus::Brush* GdiFontManager::GetBrush(GdiRectData_t data, int width, int height)
+Gdiplus::Brush* GdiFontManager::GetBrush(const GdiRectData_t& data, int width, int height)
 {
     if (data.GradientStyle == 0)
     {
