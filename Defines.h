@@ -38,6 +38,7 @@ struct GdiFontData_t
     const char* FontText = nullptr;
     GdiRegion_t* Regions = nullptr;
     int32_t RegionsLength;
+    GdiCharRange_t* ClipRange = nullptr;
 };
 
 struct GdiRectData_t

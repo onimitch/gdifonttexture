@@ -142,18 +142,19 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 
     m_Graphics->ResetClip();
     Gdiplus::Region clipRegion(box);
-    
-    Gdiplus::Font myFont(pFontFamily, data.FontHeight, data.FontFlags, Gdiplus::UnitPixel);
-
-    // Get text bounds since the height is more accurate than the path GetBounds above
-    //Gdiplus::CharacterRange charRangesAll[1] = { Gdiplus::CharacterRange(0, length) };
-    //fontFormat.SetMeasurableCharacterRanges(1, (const Gdiplus::CharacterRange*)charRangesAll);
-    //Gdiplus::Region charRangeRegionsAll[1] = {};
-    //m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, box, &fontFormat, 1, charRangeRegionsAll);
-    //Gdiplus::Rect textBounds;
-    //charRangeRegionsAll->GetBounds(&textBounds, m_Graphics);
 
     Gdiplus::RectF boxF(0, 0, ceilf(boxWidth), ceilf(boxHeight));
+    Gdiplus::Font myFont(pFontFamily, data.FontHeight, data.FontFlags, Gdiplus::UnitPixel);
+
+    // Apply global clip range if provided
+    if(data.ClipRange != nullptr)
+    {
+        fontFormat.SetMeasurableCharacterRanges(1, (const Gdiplus::CharacterRange*)data.ClipRange);
+        Gdiplus::Region globalClipRegion;// = new Gdiplus::Region();
+        m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, boxF, &fontFormat, 1, &globalClipRegion);
+        clipRegion.Exclude(&globalClipRegion);
+        //delete globalClipRegion;
+    }
 
     // Draw regions first
     for(int regionIndex = 0; regionIndex < data.RegionsLength; ++regionIndex)
@@ -473,10 +474,6 @@ GdiFontReturn_t GdiFontManager::CreateRectTexture(const GdiRectData_t& data)
         delete pRaw;
         DeleteObject(pBmp);
     }
-
-    // Use the calculated text bounds for the height
-    //width = textBounds.Width;
-    //height = textBounds.Height;
 
     // Create return object..
     GdiFontReturn_t ret;
