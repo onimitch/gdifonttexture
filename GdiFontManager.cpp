@@ -110,8 +110,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 
     // Attempt to create graphics path..
     Gdiplus::Rect pathRect(0, 0, boxWidth, boxHeight);
-    Gdiplus::StringFormat fontFormat;
-    fontFormat.SetAlignment(Gdiplus::StringAlignment::StringAlignmentNear);
+    Gdiplus::StringFormat fontFormat = Gdiplus::StringFormat::GenericTypographic();
 
     Gdiplus::GraphicsPath* pPath = new Gdiplus::GraphicsPath();
     pPath->AddString(wBuffer, length, pFontFamily, data.FontFlags, data.FontHeight, pathRect, &fontFormat);
@@ -154,6 +153,8 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
     //Gdiplus::Rect textBounds;
     //charRangeRegionsAll->GetBounds(&textBounds, m_Graphics);
 
+    Gdiplus::RectF boxF(0, 0, ceilf(boxWidth), ceilf(boxHeight));
+
     // Draw regions first
     for(int regionIndex = 0; regionIndex < data.RegionsLength; ++regionIndex)
     { 
@@ -171,7 +172,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 
         // Get the regions that correspond to the ranges within the string when
         // layout rectangle A is used. Then draw the string, and show the regions.
-        m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, box, &fontFormat, rangeCount, pCharRangeRegions);
+        m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, boxF, &fontFormat, rangeCount, pCharRangeRegions);
 
         for (int i = 0; i < rangeCount; i++)
         {
