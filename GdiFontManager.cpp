@@ -147,43 +147,43 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
     Gdiplus::Font myFont(pFontFamily, data.FontHeight, data.FontFlags, Gdiplus::UnitPixel);
 
     // Apply global clip range if provided
-    if(data.ClipRange != nullptr)
+    if(data.ClipRange != nullptr && data.ClipRange->Length > 0)
     {
+        if(data.ClipRange->Length > length)
+        {
+            data.ClipRange->Length = length;
+        }
+
         fontFormat.SetMeasurableCharacterRanges(1, (const Gdiplus::CharacterRange*)data.ClipRange);
-        Gdiplus::Region globalClipRegion;// = new Gdiplus::Region();
+        Gdiplus::Region globalClipRegion;
         m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, boxF, &fontFormat, 1, &globalClipRegion);
-        clipRegion.Exclude(&globalClipRegion);
-        //delete globalClipRegion;
+
+        clipRegion.Intersect(&globalClipRegion);
+
+        //Gdiplus::SolidBrush bgBrush(Gdiplus::Color(1, 255, 255, 255));
+        //m_Graphics->FillRegion(&bgBrush, &globalClipRegion);
     }
 
     // Draw regions first
     for(int regionIndex = 0; regionIndex < data.RegionsLength; ++regionIndex)
     { 
-        //Gdiplus::CharacterRange charRanges[1] = { Gdiplus::CharacterRange(1, 10) };
         const auto& regionInfo = data.Regions[regionIndex];
         int rangeCount = regionInfo.RangesLength;
-
-        // Set ranges of character positions.
         fontFormat.SetMeasurableCharacterRanges(rangeCount, (const Gdiplus::CharacterRange*)regionInfo.Ranges);
-
-        // Get the number of ranges that have been set, and allocate memory to 
-        // store the regions that correspond to the ranges.
-        rangeCount = fontFormat.GetMeasurableCharacterRangeCount();
         Gdiplus::Region* pCharRangeRegions = new Gdiplus::Region[rangeCount];
 
-        // Get the regions that correspond to the ranges within the string when
-        // layout rectangle A is used. Then draw the string, and show the regions.
         m_Graphics->MeasureCharacterRanges(wBuffer, -1, &myFont, boxF, &fontFormat, rangeCount, pCharRangeRegions);
 
         for (int i = 0; i < rangeCount; i++)
         {
             // Draw this character range region in the defined color
-            
-            //Gdiplus::SolidBrush redBrush(regionInfo.FontColor);
-            //m_Graphics->FillRegion(&redBrush, pCharRangeRegions + i);
+            //Gdiplus::SolidBrush bgBrush(UINT32_TO_COLOR(regionInfo.FontColor));
+            //m_Graphics->FillRegion(&bgBrush, pCharRangeRegions + i);
 
-            m_Graphics->SetClip(pCharRangeRegions + i, Gdiplus::CombineModeReplace);
+            m_Graphics->SetClip(&clipRegion, Gdiplus::CombineModeReplace);
+            m_Graphics->SetClip(pCharRangeRegions + i, Gdiplus::CombineModeIntersect);
 
+            // Draw in the defined color
             auto pBrush = new Gdiplus::SolidBrush(UINT32_TO_COLOR(regionInfo.FontColor));
             m_Graphics->FillPath(pBrush, pPath);
             delete pBrush;
@@ -199,17 +199,17 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 
     m_Graphics->ResetClip();
 
+    // Set clip so we don't render on top of excluded regions
+    if (data.RegionsLength > 0 || data.ClipRange != nullptr)
+    {
+        m_Graphics->SetClip(&clipRegion, Gdiplus::CombineModeReplace);
+    }
+
     // Draw outline if applicable..
     if (pen)
     {
         m_Graphics->DrawPath(pen, pPath);
         delete pen;
-    }
-
-    // Set clip so we don't render on top of excluded regions
-    if (data.RegionsLength > 0)
-    {
-        m_Graphics->SetClip(&clipRegion, Gdiplus::CombineModeReplace);
     }
 
     // Fill text if font color isn't fully transparent..
@@ -256,6 +256,12 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
         px += this->m_CanvasWidth;
     }
     width = (lastPx - firstPx) + 1;
+
+    // Add one to the height as sometimes text seems to get cut off
+    if (++height > maxHeight)
+    {
+        height = maxHeight;
+    }
 
     // End early if width or height are 0..
     if ((width == 0) || (height == 0))
