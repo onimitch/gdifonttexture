@@ -33,7 +33,7 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid)
     return -1; // Failure
 }
 
-GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
+GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice, uint32_t pLogManager)
     : m_Device(pDevice)
     , m_CanvasWidth(2048)
     , m_CanvasHeight(2048)
@@ -70,6 +70,11 @@ GdiFontManager::GdiFontManager(IDirect3DDevice8* pDevice)
     m_Graphics->SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     m_Graphics->SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
     setlocale(LC_ALL, "");
+
+    if (pLogManager != 0)
+    {
+        m_LogManager = reinterpret_cast<ILogManager*>(pLogManager);
+    }
 }
 
 GdiFontManager::~GdiFontManager()
@@ -82,6 +87,11 @@ GdiFontManager::~GdiFontManager()
 
 GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 {
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Logf(5, "GdiFontTexture", "CreateFontTexture: %s", data.FontText);
+    }
+
     int32_t boxHeight = data.BoxHeight > 0 ? data.BoxHeight : m_CanvasHeight;
     int32_t boxWidth = data.BoxWidth > 0 ? data.BoxWidth : m_CanvasWidth;
 
@@ -105,8 +115,12 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
     wchar_buffer_size = ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, nullptr, 0);
     wBuffer = new wchar_t[wchar_buffer_size];
     ::MultiByteToWideChar(CP_UTF8, 0, data.FontText, -1, wBuffer, wchar_buffer_size);
-    // TODO: Is this redundant now we have wchar_buffer_size?
     auto length = wcslen(wBuffer);
+
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Logf(5, "GdiFontTexture", "wchar_buffer_size: %d, length: %d", wchar_buffer_size, length);
+    }
 
     // Attempt to create graphics path..
     Gdiplus::Rect pathRect(0, 0, boxWidth, boxHeight);
@@ -119,6 +133,11 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
         delete pPath;
         delete pFontFamily;
         return GdiFontReturn_t();
+    }
+
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Log(5, "GdiFontTexture", "Prepare outline pen");
     }
 
     // Prepare outline pen if applicable and get calculated path size from Gdiplus..
@@ -135,10 +154,15 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
         pPath->GetBounds(&box, nullptr, &genericPen);
     }
 
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Log(5, "GdiFontTexture", "ClearCanvas");
+    }
+
     // Clear necessary space using calculated path size.
     int32_t width  = (int32_t)ceil(box.Width);
     int32_t height = (int32_t)ceil(box.Height);
-    this->ClearCanvas(width, height);
+    this->ClearCanvas(this->m_CanvasWidth, this->m_CanvasHeight);
 
     m_Graphics->ResetClip();
     Gdiplus::Region clipRegion(box);
@@ -224,11 +248,17 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
     delete pPath;
     delete pFontFamily;
 
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Logf(5, "GdiFontTexture", "Examine pixels Width: %d, Height: %d", width, height);
+    }
+
     // Examine raw pixels to get exact texture size(gdiplus does not calculate pixel perfect size)..
     int32_t firstPx = width - 1;
     int32_t lastPx  = 0;
     uint32_t* px    = (uint32_t*)this->m_Pixels;
-    int maxHeight   = height;
+    // height can sometimes be too small to find the drawn pixels so we double it just to make sure
+    int maxHeight   = height * 2;
     for (auto y = 0; y < maxHeight; y++)
     {
         for (auto x = (width - 1); x >= lastPx; x--)
@@ -255,17 +285,19 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
 
         px += this->m_CanvasWidth;
     }
-    width = (lastPx - firstPx) + 1;
-
-    // Add one to the height as sometimes text seems to get cut off
-    if (++height > maxHeight)
+       
+    if (m_LogManager != nullptr)
     {
-        height = maxHeight;
+        m_LogManager->Logf(5, "GdiFontTexture", "Examine pixels lastPx: %d, firstPx: %d", lastPx, firstPx);
     }
 
+    width = (lastPx - firstPx) + 1;
+
     // End early if width or height are 0..
-    if ((width == 0) || (height == 0))
+    if ((width <= 0) || (height <= 0))
+    {
         return GdiFontReturn_t();
+    }
 
     // Attempt to create texture..
     IDirect3DTexture8* pTexture;
@@ -280,6 +312,11 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
             pTexture->Release();
 
         return GdiFontReturn_t();
+    }
+
+    if (m_LogManager != nullptr)
+    {
+        m_LogManager->Logf(5, "GdiFontTexture", "Copy pixels Width: %d, Height: %d", width, height);
     }
 
     // Copy rendered font from bitmap to texture..

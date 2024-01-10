@@ -8,9 +8,9 @@ int CALLBACK EnumFontFamExProc(const LOGFONT* lpelfe, const TEXTMETRIC* lpntme, 
 
 extern "C"
 {
-    extern __declspec(dllexport) GdiFontManager* CreateFontManager(IDirect3DDevice8* pDirect3DDevice)
+    extern __declspec(dllexport) GdiFontManager* CreateFontManager(IDirect3DDevice8* pDirect3DDevice, uint32_t pLogManager)
     {
-        return new GdiFontManager(pDirect3DDevice);
+        return new GdiFontManager(pDirect3DDevice, pLogManager);
     }
     extern __declspec(dllexport) void DestroyFontManager(GdiFontManager* pFontManager)
     {

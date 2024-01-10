@@ -6,6 +6,7 @@
 #endif
 
 #include "Defines.h"
+#include "includes/Ashita.h"
 
 class GdiFontManager
 {
@@ -14,6 +15,8 @@ private:
     IDirect3DDevice8* m_Device;
     Gdiplus::Bitmap* m_Bitmap;
     Gdiplus::Graphics* m_Graphics;
+
+    ILogManager* m_LogManager = nullptr;
 
     // Bitmap components
     int m_CanvasWidth;
@@ -27,7 +30,7 @@ private:
 
 
 public:
-    GdiFontManager(IDirect3DDevice8* pDevice);
+    GdiFontManager(IDirect3DDevice8* pDevice, uint32_t pLogManager);
     ~GdiFontManager();
     GdiFontReturn_t CreateFontTexture(const GdiFontData_t& data);
     GdiFontReturn_t CreateRectTexture(const GdiRectData_t& data);
