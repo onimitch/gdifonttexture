@@ -291,6 +291,7 @@ GdiFontReturn_t GdiFontManager::CreateFontTexture(const GdiFontData_t& data)
         m_LogManager->Logf(5, "GdiFontTexture", "Examine pixels lastPx: %d, firstPx: %d", lastPx, firstPx);
     }
 
+    firstPx = 0;
     width = (lastPx - firstPx) + 1;
 
     // End early if width or height are 0..
